@@ -26,8 +26,7 @@ def main():
     run = current(args.repo)
     if git(args.repo, 'status', '--porcelain'):
         raise RuntimeError('extension requires committed, clean study code')
-    additions = [*args.repo.glob('extensions/c3/*.py'),
-                 *args.repo.glob('extensions/c3/*.sh'),
+    additions = [*(p for p in args.repo.glob('extensions/c3/*') if p.is_file()),
                  args.repo / 'PREDICTIONS_EXTENSION_C3.md']
     run['extension_files'] = {str(p.relative_to(args.repo)): sha(p)
                               for p in sorted(additions)}

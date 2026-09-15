@@ -27,6 +27,8 @@ finish_extension() {
 trap finish_extension EXIT
 date -Is > "$RUNS/started.txt"
 date +%s > "$RUNS/started_unix.txt"
+printf '%s\n' "${C3_FIRST_STARTED_UNIX:-$(cat "$RUNS/started_unix.txt")}" \
+    > "$RUNS/extension_first_started_unix.txt"
 gpu4_must_be_free
 clocks_snapshot "$RUNS/clocks_pre.txt"
 "$V/python" "$REPO/extensions/c3/manifest.py" create \
