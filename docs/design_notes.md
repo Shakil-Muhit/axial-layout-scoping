@@ -1,5 +1,10 @@
 # Design notes — axial-layout scoping (pre-implementation)
 
+Historical design record. See [RESULT.md](../RESULT.md) for the executed
+protocol, observed environment, and rejected annotation cross-check. The
+pre-execution GPU-0 workload assumption below did not hold during this run;
+the saved GPU snapshots are authoritative.
+
 Grounded against msst @ ea7eb9c20ea0e3f94368a30fc1654b51cdd55789 (the pin in
 sm120-nulltest/configs/msst_commit.txt) and the KJ config
 (`configs/KimberleyJensen/config_vocals_mel_band_roformer_kj.yaml`):

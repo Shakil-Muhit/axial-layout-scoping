@@ -51,9 +51,10 @@ def main():
                 part = args.out / f'artifacts.tar.gz.part{len(parts):03d}'
                 part.write_bytes(data)
                 parts.append({'name': part.name, 'bytes': len(data), 'sha256': digest(part)})
+        run = json.loads((args.evidence / 'raw/manifest.json').read_text())
         info = {'archive_sha256': digest(archive), 'archive_bytes': archive.stat().st_size,
                 'parts': parts, 'files': checksums, 'file_count': len(files),
-                'generation_id': json.loads((args.evidence / 'raw/manifest.json').read_text())['generation_id']}
+                'generation_id': run['generation_id'], 'use_amp': run['use_amp']}
         (args.out / 'ARTIFACTS.json').write_text(json.dumps(info, indent=1) + '\n')
         (args.out / 'SHA256SUMS').write_text(''.join(f"{p['sha256']}  {p['name']}\n" for p in parts))
         print(json.dumps({k: v for k, v in info.items() if k != 'files'}, indent=1))
