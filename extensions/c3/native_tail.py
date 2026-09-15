@@ -1,9 +1,8 @@
-"""Keep native iSTFT opaque after the attention graph-break repair.
+"""Native DC-filter boundary for the confirmed Torch 2.8 AOT failure.
 
-Torch 2.8's full-forward AOT decomposition fails its functional-graph check
-on an internal iSTFT copy_. This adapter calls the existing torch.istft;
-it implements no FFT, overlap-add, arithmetic replacement, or GPU kernel.
-Only the fixed registered inference operating point is supported.
+The isolated complex, strided index_fill reproducer fails AOT's functional
+graph assertion. Call the original Tensor.index_fill without decomposing it.
+No new GPU kernel or arithmetic is introduced; torch.istft stays unchanged.
 """
 import ast
 import hashlib
@@ -11,40 +10,31 @@ import inspect
 from pathlib import Path
 import textwrap
 import types
-from typing import Optional
 
 import torch
 
 
-@torch.library.custom_op('axial_c3::native_istft', mutates_args=(),
-                         tags=(torch.Tag.cudagraph_unsafe,))
-def native_istft(input: torch.Tensor, window: torch.Tensor,
-                 n_fft: int, hop_length: int, win_length: int,
-                 normalized: bool, length: Optional[int]) -> torch.Tensor:
-    result = torch.istft(input, n_fft=n_fft, hop_length=hop_length,
-                        win_length=win_length, window=window,
-                        normalized=normalized, length=length,
-                        return_complex=False)
-    # Verify the fake signature against every real call, including capture.
-    assert result.shape == (2, 352800)
-    assert result.stride() == (352800, 1) and result.storage_offset() == 0
-    assert result.dtype == torch.float32
+@torch.library.custom_op('axial_c3::native_dc_fill', mutates_args=())
+def native_dc_fill(input: torch.Tensor, index: torch.Tensor) -> torch.Tensor:
+    result = input.index_fill(1, index, 0.)
+    assert result.shape == input.shape == (2, 1025, 801)
+    assert result.stride() == input.stride() and result.storage_offset() == 0
+    assert result.dtype == input.dtype == torch.complex64
     return result
 
 
-@native_istft.register_fake
-def native_istft_fake(input, window, n_fft, hop_length, win_length, normalized, length):
+@native_dc_fill.register_fake
+def native_dc_fill_fake(input, index):
     assert input.shape == (2, 1025, 801) and input.dtype == torch.complex64
-    assert window.shape == (2048,) and window.dtype == torch.float32
-    assert (n_fft, hop_length, win_length, normalized) == (2048, 441, 2048, False)
-    assert length is None or length == 352800
-    return torch.empty((2, 352800), device=input.device, dtype=torch.float32)
+    assert input.stride() in ((801, 1602, 1), (821025, 801, 1))
+    assert index.shape == () and index.dtype == torch.int64
+    return torch.empty_strided(input.shape, input.stride(),
+                               device=input.device, dtype=input.dtype)
 
 
-def call_native_istft(input, n_fft, hop_length, win_length, normalized,
-                     window, return_complex, length):
-    assert return_complex is False
-    return native_istft(input, window, n_fft, hop_length, win_length, normalized, length)
+def call_native_dc_fill(input, dim, index, value):
+    assert dim == 1 and value == 0.
+    return native_dc_fill(input, index)
 
 
 def install(model, out_dir):
@@ -56,40 +46,62 @@ def install(model, out_dir):
     tree = ast.parse(original)
     replacements = 0
     for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and ast.unparse(node.func) == 'torch.istft':
-            node.func = ast.Name(id='c3_native_istft', ctx=ast.Load())
+        if (isinstance(node, ast.Call) and
+                ast.unparse(node.func) == 'stft_repr.index_fill'):
+            assert len(node.args) == 3 and not node.keywords
+            assert ast.unparse(node.args[0]) == '1'
+            assert ast.unparse(node.args[1]) == 'tensor(0, device=device)'
+            assert isinstance(node.args[2], ast.Constant) and node.args[2].value == 0.
+            node.func = ast.Name(id='c3_native_dc_fill', ctx=ast.Load())
+            node.args.insert(0, ast.Name(id='stft_repr', ctx=ast.Load()))
             replacements += 1
-    assert replacements == 1, 'expected the single public inference iSTFT call'
+    assert replacements == 1, 'expected the single public DC-filter call'
     source = ast.unparse(ast.fix_missing_locations(tree)) + '\n'
     restored = ast.parse(source)
     for node in ast.walk(restored):
-        if isinstance(node, ast.Call) and ast.unparse(node.func) == 'c3_native_istft':
-            node.func = ast.parse('torch.istft', mode='eval').body
+        if isinstance(node, ast.Call) and ast.unparse(node.func) == 'c3_native_dc_fill':
+            base = node.args.pop(0)
+            node.func = ast.Attribute(value=base, attr='index_fill', ctx=ast.Load())
     assert ast.dump(restored) == ast.dump(ast.parse(original))
     dest = Path(out_dir) / 'generated_public_forward.py'
     dest.write_text(source)
     namespace = dict(MelBandRoformer.forward.__globals__)
-    namespace['c3_native_istft'] = call_native_istft
+    namespace['c3_native_dc_fill'] = call_native_dc_fill
     exec(compile(source, str(dest), 'exec'), namespace)
-    replacement = types.MethodType(namespace['forward'], model)
-    model.forward = replacement
+    model.forward = types.MethodType(namespace['forward'], model)
     return {'status': 'PASS', 'replacements': replacements,
             'original_forward_sha256': hashlib.sha256(original.encode()).hexdigest(),
             'external_forward_sha256': hashlib.sha256(source.encode()).hexdigest(),
-            'generated_source': str(dest), 'native_call': 'torch.istft',
-            'custom_op': 'axial_c3::native_istft', 'new_gpu_kernel': False,
-            'cudagraph_unsafe_tag': True,
-            'scope': 'fixed inference shape; public forward differs only in iSTFT callee'}
+            'generated_source': str(dest), 'native_call': 'Tensor.index_fill',
+            'custom_op': 'axial_c3::native_dc_fill', 'new_gpu_kernel': False,
+            'cudagraph_unsafe_tag': False,
+            'scope': 'fixed inference shape; public forward differs only in DC-filter callee'}
 
 
 def verify_operator():
-    x = torch.zeros((2, 1025, 801), dtype=torch.complex64, device='cuda')
-    window = torch.hann_window(2048, device='cuda')
+    gen = torch.Generator(device='cpu').manual_seed(4242)
+    x = torch.randn((1025, 2, 801), generator=gen, dtype=torch.complex64).to('cuda')
+    x = x.permute(1, 0, 2)
+    index = torch.tensor(0, device='cuda')
     with torch.no_grad(), torch.autocast('cuda', enabled=True):
-        result = torch.library.opcheck(
-            native_istft, (x, window, 2048, 441, 2048, False, None),
-            test_utils=('test_schema', 'test_faketensor'))
-    torch.cuda.synchronize()
-    return {'status': 'PASS', 'opcheck': result,
-            'output_shape': [2, 352800], 'output_stride': [352800, 1],
-            'output_dtype': 'torch.float32', 'output_storage_offset': 0}
+        checks = torch.library.opcheck(native_dc_fill, (x, index),
+                                      test_utils=('test_schema', 'test_faketensor'))
+        reference = x.index_fill(1, index, 0.)
+        actual = native_dc_fill(x, index)
+        assert torch.equal(actual, reference)
+        graph = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(graph):
+            captured = native_dc_fill(x, index)
+        graph.replay()
+        torch.cuda.synchronize()
+        assert torch.equal(captured, reference)
+        compiled = torch.compile(native_dc_fill, mode='reduce-overhead',
+                                 dynamic=False, fullgraph=True)
+        for _ in range(6):
+            result = compiled(x, index).clone()
+        torch.cuda.synchronize()
+        assert torch.equal(result, reference)
+    return {'status': 'PASS', 'opcheck': checks, 'native_bitwise_equal': True,
+            'cuda_graph_capture_and_replay': 'PASS', 'compiled_fullgraph': 'PASS',
+            'output_shape': list(actual.shape), 'output_stride': list(actual.stride()),
+            'output_dtype': str(actual.dtype), 'output_storage_offset': actual.storage_offset()}

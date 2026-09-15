@@ -58,3 +58,28 @@ execution was false in the pinned environment. The final C3 arm must be
 identified as attention repair **plus native iSTFT boundary**. Preserve both
 failed attempts, require eager equivalence and the same baseline validation,
 and retain the original extension deadline and all decision thresholds.
+
+## Attempt 3 result; correction of the compiler-failure diagnosis
+
+Code `f815538`. The native-iSTFT adapter passed schema/fake-tensor checks and
+the full eager model remained exactly equal to stock. Full compilation
+failed at the same internal `copy_`, now visibly **before** the opaque iSTFT
+call. The initial attribution to iSTFT decomposition was therefore incorrect.
+An isolated `index_fill` reproducer using the actual complex shape and
+stride produced the same AOT assertion. This identifies the DC-filter
+decomposition as the blocker; it is not evidence of an iSTFT bug.
+
+### Attempt 4 plan (recorded before execution)
+
+Remove the unnecessary native-iSTFT boundary. Wrap only the original
+`Tensor.index_fill` DC-filter call as an opaque operator, with its native
+shape, stride, dtype, and storage offset preserved. Restore the public
+`torch.istft` call. Mechanically compare the external forward to the pinned
+source, allowing just that one callee substitution. Before full-model work,
+check schema/fake-tensor behavior, exact native outputs, CUDA-graph capture
+and replay, and isolated full-graph compilation. No CUDA-graph-unsafe tag,
+compiler flag, backend change, new GPU kernel, or arithmetic rewrite is used.
+
+The final arm, if qualified, is **attention repair plus native DC-filter
+boundary**. Keep all earlier failed attempts and the unchanged prediction.
+Every GPU invocation remains inside the first attempt's one-hour window.
