@@ -12,6 +12,7 @@ import build_model as bm
 import common_timing as ct
 from evidence_io import read_json, write_json
 from graphbreak_fix import install
+import native_tail
 
 CHUNK = 352800
 
@@ -77,8 +78,11 @@ def main():
         paths['msst'], paths['ckpt'], paths['config'])
     installed = install(model)
     write_json(args.out / 'source_verification.json', installed)
+    tail = native_tail.install(model, args.out)
+    write_json(args.out / 'native_tail_verification.json', tail)
     write_json(args.out / 'env.json', {**ct.gpu_env(os.environ.get('NSYS_PATH')), 'use_amp': amp})
     if args.mode == 'eager-check':
+        write_json(args.out / 'native_tail_opcheck.json', native_tail.verify_operator())
         eager_checks = {}
         with torch.no_grad(), ctx():
             for seed in ct.VAL_SEEDS:
