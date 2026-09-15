@@ -83,3 +83,21 @@ compiler flag, backend change, new GPU kernel, or arithmetic rewrite is used.
 The final arm, if qualified, is **attention repair plus native DC-filter
 boundary**. Keep all earlier failed attempts and the unchanged prediction.
 Every GPU invocation remains inside the first attempt's one-hour window.
+
+## Attempt 4 result and post-collection tooling
+
+Measuring code `700c2c6`, generation `b12c7049-f5a5-4f06-881b-59c87fdd9fa4`.
+The DC-filter boundary passes its operator checks and eager model checks.
+C3 qualifies at the loose tier, settles with zero graph breaks, and completes
+unprofiled timing and a node-level trace. The original mapper then rejects
+24 dumped SDPA calls versus 12 traced calls: it counted both the cold-cache
+and steady graphs. Exact, ordered Triton inventory matching identifies one
+steady graph in each process. The temporal parser proves the head-merge
+copies from stored values, including kernels named `mm`.
+
+After collection, the selector and audited ledger replace that invalid
+all-dumps mapping in `session.sh`. This changes postprocessing only; the
+reported measurements retain the `700c2c6` manifest. The standalone
+calibration refinement is registered in `docs/c3_calibration.md` and measured
+with code `a4ab607`. Its remaining validation/coverage failures are findings,
+not permission to relax tolerances or report an unknown B as zero.

@@ -60,17 +60,10 @@ TORCH_COMPILE_DEBUG_DIR="$RUNS/phase1/microbench_dump" \
     > "$RUNS/phase1/microbench.log" 2>&1
 "$V/python" "$REPO/scoping/classify.py" \
     "$RUNS/phase1/trace_c3_cuda_gpu_kern_sum.csv" "$RUNS/phase1/classifier_sample.csv"
-"$V/python" "$REPO/scoping/inventory.py" "$RUNS/phase1/dump" \
+"$V/python" "$REPO/scripts/select_c3_graph.py" "$RUNS"
+"$V/python" "$REPO/scoping/inventory.py" "$RUNS/phase1/active_dump" \
     "$RUNS/phase1/inventory_c3.json"
-"$V/python" "$REPO/scoping/kernel_map.py" --output-code-dir "$RUNS/phase1/dump" \
-    --gpu-trace-csv "$RUNS/phase1/trace_c3_cuda_gpu_trace.csv" \
-    --kern-sum-csv "$RUNS/phase1/trace_c3_cuda_gpu_kern_sum.csv" \
-    --export-status "$RUNS/phase1/trace_c3_exports.json" \
-    --nvtx-csv "$RUNS/phase1/trace_c3_nvtx_gpu_proj_trace.csv" \
-    --trace-meta "$RUNS/phase1/trace_run_meta.json" \
-    --baseline-timing "$RUNS/qualification/timing.json" \
-    --bwref "$RUNS/phase1/microbench_bwref.json" \
-    --out-dir "$RUNS/phase1" --tag c3 \
+"$V/python" "$REPO/scripts/c3_layout_ledger.py" "$RUNS" \
     > "$RUNS/phase1/kernel_map.log" 2>&1
 "$V/python" "$REPO/extensions/c3/manifest.py" check \
     --repo "$REPO" --out "$RUNS" --c1 "$AX/runs"

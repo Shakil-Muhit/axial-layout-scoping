@@ -1,7 +1,9 @@
 # Axial-layout scoping
 
-**Completed report:** [RESULT.md](RESULT.md). Baseline validation passed;
-layout attribution remains unresolved, and Phase 2 was not run.
+**Completed report:** [RESULT.md](RESULT.md). The bounded C3 extension reaches
+30.306 ms with zero graph breaks. Verified head-merge copies account for
+0.887% of its forward; the full layout share remains unresolved because
+hidden-cost reference coverage is incomplete. Phase 2 was not run.
 
 Registered study of materialized layout changes in the compiled MelBandRoformer
 forward at the 8-second operating point. [PREDICTIONS.md](PREDICTIONS.md) was the
@@ -52,3 +54,32 @@ and checksum verification are documented in [evidence/README.md](evidence/README
 The current acceptance rules and remaining methodological limits are recorded
 in [docs/codex/05_takeover.md](docs/codex/05_takeover.md). Earlier review documents
 are historical records, not claims that GPU execution passed.
+
+## Bounded C3 extension
+
+[Registered prediction and scope](PREDICTIONS_EXTENSION_C3.md),
+[attempt notes](extensions/c3/ATTEMPT_NOTES.md), and
+[reference-calibration plan](docs/c3_calibration.md) document the extension.
+The external wrapper fixes backend-context tracing and preserves native
+complex DC filtering behind a compiler boundary. It uses the pinned model
+and original compile call; it implements no new GPU kernel.
+
+The final runner selects the executed steady graph by its exact ordered
+Triton inventory, then maps buffer metadata before reuse and identifies
+layout copies from their stored values. Its postprocessing incorporates
+the independently verified corrections made after the recorded run.
+
+```bash
+python3 scripts/test_c3_ledger.py -v
+```
+
+Reproduction on ml-beast requires a fresh output directory and the retained
+C1 references at `~/axial/runs`. Run with a hard one-hour timeout:
+
+```bash
+timeout --signal=TERM --kill-after=30s 3600 bash /mnt/Muhit/Home/ms/axial-layout-scoping/extensions/c3/session.sh "$HOME/axial/extensions/c3_fresh"
+```
+
+The resulting A-only share does not establish a NO-GO threshold while B is
+unresolved. Raw outputs, all failed attempts, and the calibration refinement
+are available through [evidence restoration instructions](evidence/README.md).
