@@ -1,0 +1,10 @@
+# evidence/ is git-ignored except evidence/*.md (handoff section 2). All
+# artifacts exist in the working tree on the shared mount for the owner's
+# local audit; RESULT.md carries the path of every number.
+evidence/*
+!evidence/*.md
+__pycache__/
+*.pyc
+torch_compile_debug/
+# Historical review packets duplicate whole source snapshots; reviews remain versioned.
+docs/codex/prompts/
